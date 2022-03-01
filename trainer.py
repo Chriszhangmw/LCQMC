@@ -4,6 +4,7 @@ from functions_utils import load_model_and_parallel,swa,PGD,FGM
 import torch
 import copy
 import os
+# import torchmetrics
 
 def build_optimizer_and_scheduler(opt, model, t_total):
     module = (
@@ -97,12 +98,13 @@ def train(opt,model,train_dataset):
 
     log_loss_steps = 20
     avg_loss = 0.
+
     for epoch in range(opt.train_epochs):
         for step, batch_data in enumerate(train_loader):
             model.train()
             for key in batch_data.keys():
                 batch_data[key] = batch_data[key].to(device)
-            loss = model(**batch_data)[0]
+            loss,logits1 = model(**batch_data)
             if use_n_gpus:
                 loss = loss.mean()
             loss.backward()
@@ -133,8 +135,9 @@ def train(opt,model,train_dataset):
             global_step += 1
             if global_step % log_loss_steps == 0:
                 avg_loss /= log_loss_steps
-                print('Step: %d / %d ----> total loss: %.5f' % (global_step, t_total, avg_loss))
+                print('Step: %d / %d ----> total loss and acc: %.5f' % (global_step, t_total, avg_loss))
                 avg_loss = 0.
+                avg_acc = 0.
             else:
                 avg_loss += loss.item()
             if global_step % save_steps == 0:

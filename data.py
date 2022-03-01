@@ -77,7 +77,7 @@ def convert_trigger_example(example: MCExample, max_seq_len, tokenizer: BertToke
                                         padding='max_length',
                                         is_pretokenized=True,
                                         return_token_type_ids=True,
-                                        return_attention_mask=True)
+                                        return_attention_mask=True,return_tensors='pt')
 
     token_ids = encode_dict['input_ids']
     attention_masks = encode_dict['attention_mask']
@@ -95,7 +95,7 @@ class BaseDataset(Dataset):
         self.nums = len(features)
 
         self.token_ids = [torch.tensor(example.token_ids).long() for example in features]
-        self.attention_masks = [torch.tensor(example.attention_masks).float() for example in features]
+        self.attention_masks = [torch.tensor(example.attention_masks).long() for example in features]
         self.token_type_ids = [torch.tensor(example.token_type_ids).long() for example in features]
 
         self.labels = None
@@ -126,7 +126,25 @@ def build_dataset(features, mode):
 
 
 
+def convert_examples_to_features( examples, bert_dir, max_seq_len):
 
+    tokenizer = BertTokenizer.from_pretrained(bert_dir)
+    print(f'Vocab nums in this tokenizer is: {tokenizer.vocab_size}')
+
+    features = []
+
+    for i, example in enumerate(tqdm(examples, desc=f'convert examples')):
+
+        feature = convert_trigger_example(
+            example=example,
+            max_seq_len=max_seq_len,
+            tokenizer=tokenizer,
+        )
+        if feature is None:
+            continue
+
+        features.append(feature)
+    return features
 
 
 

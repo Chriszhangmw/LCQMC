@@ -3,9 +3,11 @@ import torch.nn.functional as F
 import os
 import torch
 import torch.nn as nn
-
+from transformers import BertModel
 from torch import nn
 from torch.nn import functional as F
+
+
 
 class RDropLoss(nn.Module):
     """
@@ -18,7 +20,6 @@ class RDropLoss(nn.Module):
             If `reduction` is ``'none'``, no reduction will be applied.
             Defaults to ``'none'``.
     """
-
     def __init__(self, reduction='none'):
         super(RDropLoss, self).__init__()
         if reduction not in ['sum', 'mean', 'none', 'batchmean']:
@@ -51,37 +52,71 @@ class RDropLoss(nn.Module):
         return loss
 
 class QuestionMatching(nn.Module):
-    def __init__(self, pretrained_model, dropout=None, rdrop_coef=0.0):
+    def __init__(self, bert_dir, dropout=None, rdrop_coef=0.0):
         super().__init__()
-        self.ptm = pretrained_model
+        config_path = os.path.join(bert_dir, 'config.json')
+        assert os.path.exists(bert_dir) and os.path.exists(config_path), \
+            'pretrained bert file does not exist'
+        self.ptm = BertModel.from_pretrained(bert_dir)
         self.dropout = nn.Dropout(dropout if dropout is not None else 0.1)
-
-        # num_labels = 2 (similar or dissimilar)
-        self.classifier = nn.Linear(self.ptm.config["hidden_size"], 2)
+        self.bert_config = self.ptm.config
+        hidden_size = self.bert_config.hidden_size
+        self.classifier = nn.Linear(hidden_size, 2)
         self.rdrop_coef = rdrop_coef
         self.rdrop_loss = RDropLoss()
 
+        self.activation = nn.Softmax()
+        self.criterion = torch.nn.CrossEntropyLoss()
+
+        # self.metric = torchmetrics.Accuracy()
+        init_blocks = [self.classifier]
+        self._init_weights(init_blocks, initializer_range=self.bert_config.initializer_range)
+
+    def _init_weights(self,blocks, **kwargs):
+        """
+                参数初始化，将 Linear / Embedding / LayerNorm 与 Bert 进行一样的初始化
+                """
+        for block in blocks:
+            for module in block.modules():
+                if isinstance(module, nn.Linear):
+                    nn.init.zeros_(module.bias)
+                elif isinstance(module, nn.Embedding):
+                    nn.init.normal_(module.weight, mean=0, std=kwargs.pop('initializer_range', 0.02))
+                elif isinstance(module, nn.LayerNorm):
+                    nn.init.zeros_(module.bias)
+                    nn.init.ones_(module.weight)
+
     def forward(self,
-                input_ids,
+                token_ids,
                 token_type_ids=None,
                 position_ids=None,
-                attention_mask=None,
+                attention_masks=None,
+                labels=None,
                 do_evaluate=False):
-
-        _, cls_embedding1 = self.ptm(input_ids, token_type_ids, position_ids,
-                                     attention_mask)
+        token_ids = torch.squeeze(token_ids)
+        token_type_ids = torch.squeeze(token_type_ids)
+        attention_masks = torch.squeeze(attention_masks)
+        bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
+                                     attention_masks)
+        cls_embedding1 = bert_outputs[1]
         cls_embedding1 = self.dropout(cls_embedding1)
         logits1 = self.classifier(cls_embedding1)
-
         # For more information about R-drop please refer to this paper: https://arxiv.org/abs/2106.14448
         # Original implementation please refer to this code: https://github.com/dropreg/R-Drop
         if self.rdrop_coef > 0 and not do_evaluate:
-            _, cls_embedding2 = self.ptm(input_ids, token_type_ids, position_ids,
-                                         attention_mask)
+            bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
+                                         attention_masks)
+            cls_embedding2 = bert_outputs[1]
             cls_embedding2 = self.dropout(cls_embedding2)
             logits2 = self.classifier(cls_embedding2)
             kl_loss = self.rdrop_loss(logits1, logits2)
         else:
             kl_loss = 0.0
+        celoss  = self.criterion(logits1, labels)
+        loss = celoss + self.rdrop_coef * kl_loss
 
-        return logits1, kl_loss
+        logits1 = self.activation(logits1)
+        logits1 = (logits1,)
+        out = (loss,) + logits1
+
+        return out
