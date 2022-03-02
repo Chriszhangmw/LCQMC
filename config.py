@@ -56,7 +56,7 @@ class TrainArgs(BaseArgs):
         parser.add_argument('--rdrop_coef', default=0.1, type=float,
                             help='rdrop_coef')
 
-        parser.add_argument('--lr', default=2e-5, type=float,
+        parser.add_argument('--lr', default=5e-5, type=float,
                             help='learning rate for the bert module')
 
         parser.add_argument('--other_lr', default=2e-4, type=float,
@@ -70,56 +70,13 @@ class TrainArgs(BaseArgs):
         parser.add_argument('--weight_decay', default=0., type=float)
 
         parser.add_argument('--adam_epsilon', default=1e-8, type=float)
-        parser.add_argument('--train_batch_size', default=16, type=int)
+        parser.add_argument('--train_batch_size', default=32, type=int)
         parser.add_argument('--eval_model', default=True, action='store_true',
                             help='whether to eval model after training')
-        parser.add_argument('--attack_train', default='pgd', type=str,
+        parser.add_argument('--attack_train', default='fgm', type=str,
                             help='fgm / pgd attack train when training')
         return parser
 
 
-class DevArgs(BaseArgs):
-    @staticmethod
-    def initialize(parser: argparse.ArgumentParser):
-        parser = BaseArgs.initialize(parser)
-
-        parser.add_argument('--dev_dir', type=str, help='dev model dir')
-
-        # used for preliminary data forward
-        parser.add_argument('--dev_dir_trigger', type=str, help='dev model dir')
-        parser.add_argument('--dev_dir_role', type=str, help='dev model dir')
-
-        return parser
 
 
-class TestArgs(BaseArgs):
-    @staticmethod
-    def initialize(parser: argparse.ArgumentParser):
-        parser = BaseArgs.initialize(parser)
-
-        parser.add_argument('--version', default='v0', type=str,
-                            help='submit version')
-
-        parser.add_argument('--submit_dir', default='./submit', type=str)
-
-        parser.add_argument('--trigger_ckpt_dir', required=True, type=str)
-
-        parser.add_argument('--role1_ckpt_dir', required=True, type=str)
-
-        parser.add_argument('--role2_ckpt_dir', required=True, type=str)
-
-        parser.add_argument('--attribution_ckpt_dir', required=True, type=str)
-
-        parser.add_argument('--role1_use_trigger_distance', default=False, action='store_true')
-
-        parser.add_argument('--role2_use_trigger_distance', default=False, action='store_true')
-
-        parser.add_argument('--trigger_start_threshold', default=0.5, type=float)
-
-        parser.add_argument('--trigger_end_threshold', default=0.5, type=float)
-
-        parser.add_argument('--role1_start_threshold', default=0.5, type=float)
-
-        parser.add_argument('--role1_end_threshold', default=0.5, type=float)
-
-        return parser
