@@ -10,9 +10,62 @@ import pandas as pd
 from LAC import LAC
 from fuzzywuzzy import fuzz
 from paddle.io import Dataset
-from sklearn.model_selection import StratifiedKFold
 
-from runconfig import lac2id, dep2id
+
+LAC_TABLE = {
+    'n': '普通名词',
+    'f': '方位名词',
+    's': '处所名词',
+    'nw': '作品名',
+    'nz': '其他专名',
+    'v': '普通动词',
+    'vd': '动副词',
+    'vn': '名动词',
+    'a': '形容词',
+    'ad': '副形词',
+    'an': '名形词',
+    'd': '副词',
+    'm': '数量词',
+    'q': '量词',
+    'r': '代词',
+    'p': '介词',
+    'c': '连词',
+    'u': '助词',
+    'xc': '其他虚词',
+    'w': '标点符号',
+    'PER': '人名',
+    'LOC': '地名',
+    'ORG': '机构名',
+    'TIME': '时间'
+}
+DEP_TABLE = {
+'SBV':	'主谓关系',
+'VOB':	'动宾关系'	,
+'POB':	'介宾关系',
+'ADV':	'状中关系',
+'CMP':	'动补关系',
+'ATT':	'定中关系',
+'F':	'方位关系',
+'COO':	'并列关系',
+'DBL':	'兼语结构',
+'DOB':	'双宾语结构',
+'VV':	'连谓结构',
+'IC':	'子句结构',
+'MT':	'虚词成分',
+'HED':	'核心关系',
+}
+
+def getLabels2Id(LABELS):
+    '''BIO标记法，获得tag:id 映射字典'''
+    labels = ['O']
+    for label in LABELS:
+        labels.append('B-' + label)
+        labels.append('I-' + label)
+    labels2id = {label: id_ for id_, label in enumerate(labels)}
+    id2labels = {id_: label for id_, label in enumerate(labels)}
+    return labels2id, id2labels
+lac2id,id2lac = getLabels2Id(LAC_TABLE.keys())
+dep2id,id2dep = getLabels2Id(DEP_TABLE.keys())
 
 # 装载分词模型
 lac = LAC(mode='lac')
@@ -22,9 +75,12 @@ class RawData(object):
         BQ_PATH = '../bq_corpus/bq_corpus/'
         self.bq_dev = pd.read_csv(os.path.join(BQ_PATH, 'dev.tsv'), sep='\t', error_bad_lines=False, header=None,
                              names=['text_a', 'text_b', 'label'])
+        print('self.bq_dev number :',len(self.bq_dev))
         self.bq_test = pd.read_csv(os.path.join(BQ_PATH, 'test.tsv'), sep='\t', error_bad_lines=False, header=None,
                               names=['text_a', 'text_b', 'label'])
+        print('self.bq_test number :', len(self.bq_test))
         self.bq_train = pd.read_csv(os.path.join(BQ_PATH, 'train.tsv'), sep='\t', error_bad_lines=False, header=None,)
+        print('self.bq_train number :', len(self.bq_train))
         self.bq_train.columns =  ['text_a','text_b','label']
 
         self.bq_dev['domain'] = 0
@@ -34,10 +90,13 @@ class RawData(object):
         LCQMC_PATH = '../lcqmc/lcqmc/'
         self.lcqmc_dev = pd.read_csv(os.path.join(LCQMC_PATH, 'dev.tsv'), sep='\t', error_bad_lines=False, header=None,
                                 names=['text_a', 'text_b', 'label'])
+        print('self.lcqmc_dev number :', len(self.lcqmc_dev))
         self.lcqmc_test = pd.read_csv(os.path.join(LCQMC_PATH, 'test.tsv'), sep='\t', error_bad_lines=False, header=None,
                                  names=['text_a', 'text_b', 'label'])
+        print('self.lcqmc_test number :', len(self.lcqmc_test))
         self.lcqmc_train = pd.read_csv(os.path.join(LCQMC_PATH, 'train.tsv'), sep='\t', error_bad_lines=False, header=None,
                                   names=['text_a', 'text_b', 'label'])
+        print('self.lcqmc_train number :', len(self.lcqmc_train))
         self.lcqmc_dev['domain'] = 1
         self.lcqmc_test['domain'] = 1
         self.lcqmc_train['domain'] = 1
@@ -45,11 +104,14 @@ class RawData(object):
         OPPO_PATH = '../oppo/'
         self.oppo_dev = pd.read_csv(os.path.join(OPPO_PATH, 'dev.tsv'), sep='\t', error_bad_lines=False, header=None,
                                names=['text_a', 'text_b', 'label'])
+        print('self.oppo_dev number :', len(self.oppo_dev))
         self.oppo_train = pd.read_csv(os.path.join(OPPO_PATH, 'train.tsv'), sep='\t', error_bad_lines=False, header=None,
                                  names=['text_a', 'text_b', 'label'])
+        print('self.oppo_train number :', len(self.oppo_train))
         self.oppo_test = pd.read_csv(os.path.join(OPPO_PATH, 'test.tsv'), sep='\t', error_bad_lines=False,
                                       header=None,
                                       names=['text_a', 'text_b'])
+        print('self.oppo_test number :', len(self.oppo_test))
         self.oppo_dev['domain'] = 2
         self.oppo_train['domain'] = 2
         self.oppo_test['domain'] = 2
@@ -283,171 +345,13 @@ def markSentenceWithDiff(s1, s2,ratio ):
             new_s2 += tmp
     return new_s1, new_s2
 
-def create_dataloader(dataset,
-                      mode='train',
-                      batch_size=1,
-                      batchify_fn=None,
-                      trans_fn=None):
-    if trans_fn:
-        dataset = dataset.map(trans_fn)
-
-    shuffle = True if mode == 'train' else False
-    if mode == 'train':
-        batch_sampler = paddle.io.DistributedBatchSampler(
-            dataset, batch_size=batch_size, shuffle=shuffle)
-    else:
-        batch_sampler = paddle.io.BatchSampler(
-            dataset, batch_size=batch_size, shuffle=shuffle)
-    return paddle.io.DataLoader(
-        dataset=dataset,
-        batch_sampler=batch_sampler,
-        collate_fn=batchify_fn,
-        return_list=True,
-        )
-
-def convert_example(example, tokenizer,ratio, max_seq_length=512, is_test=False):
-
-    query, title = example["text_a"], example["text_b"]
-    # query,title = markSentenceWithDiff(query,title,ratio)
-    title = title +'[SEP]'+example['operation']
-
-    encoded_inputs = tokenizer(
-        text=query, text_pair=title, max_seq_len=max_seq_length)
-
-    input_ids = encoded_inputs["input_ids"]
-    token_type_ids = encoded_inputs["token_type_ids"]
-
-    if not is_test:
-        label = np.array([example["label"]], dtype="int64")
-        return input_ids, token_type_ids, label
-    else:
-        return input_ids, token_type_ids
-
-
-def convert_example_with_attention_token(example, tokenizer, ratio,max_seq_length=512, is_test=False):
-    '''
-
-    :param example:
-    :param tokenizer:
-    :param max_seq_length:
-    :param is_test:
-    :return:
-    '''
-    TOKEN_MASK_SHAPE = (1,768)
-    query, title = example["text_a"], example["text_b"]
-    max_l = (max_seq_length - 3) // 2
-
-    if len(query) > max_l:
-        query = query[:max_l]
-    if len(title) > max_l:
-        title = title[:max_l]
-
-    # operation = example['operation'][:40]
-    # operation_l = len(operation)
-
-    #对偶
-    if np.random.rand() > 0.5 and not is_test:
-        query,title = title,query
-
-    if example['ratio'] >ratio:
-        ind1, ind2 = getMaskIndex(query, title)
-    else:
-        ind1 = np.ones((len(query),768))
-        ind2 = np.ones((len(title),768))
-
-    input_tokens = ['[CLS]'] + [c for c in query] + ['[SEP]'] + [c for c in title] + ['[SEP]']
-    input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
-    token_type_ids = [0] * (len(query) + 2) + [1] * (len(title) + 1)
-    sequence_length = len(input_ids)
-    assert  len(input_ids) == len(token_type_ids)
-
-    select_index = np.concatenate([np.ones(TOKEN_MASK_SHAPE),ind1,np.ones(TOKEN_MASK_SHAPE),ind2,np.ones(TOKEN_MASK_SHAPE)])
-    if not is_test:
-        label = np.array([example["label"]], dtype="int64")
-        return input_ids, token_type_ids, select_index,label
-    else:
-        return input_ids, token_type_ids, select_index
-
-def convert_example_with_attention_token_domain(example, tokenizer, ratio,max_seq_length=512, is_test=False):
-    '''
-
-    :param example:
-    :param tokenizer:
-    :param max_seq_length:
-    :param is_test:
-    :return:
-    '''
-    TOKEN_MASK_SHAPE = (1,768)
-    query, title = example["text_a"], example["text_b"]
-    max_l = (max_seq_length - 3) // 2
-
-    if len(query) > max_l:
-        query = query[:max_l]
-    if len(title) > max_l:
-        title = title[:max_l]
-
-    # operation = example['operation'][:40]
-    # operation_l = len(operation)
-
-    #对偶
-    if np.random.rand() > 0.5 and not is_test:
-        query,title = title,query
-
-    if example['ratio'] >ratio:
-        ind1, ind2 = getMaskIndex(query, title)
-    else:
-        ind1 = np.ones((len(query),768))
-        ind2 = np.ones((len(title),768))
-
-    input_tokens = ['[CLS]'] + [c for c in query] + ['[SEP]'] + [c for c in title] + ['[SEP]']
-    input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
-    token_type_ids = [0] * (len(query) + 2) + [1] * (len(title) + 1)
-    sequence_length = len(input_ids)
-    assert  len(input_ids) == len(token_type_ids)
-
-    select_index = np.concatenate([np.ones(TOKEN_MASK_SHAPE),ind1,np.ones(TOKEN_MASK_SHAPE),ind2,np.ones(TOKEN_MASK_SHAPE)])
-    if not is_test:
-        label = np.array([example["label"]], dtype="int64")
-        domain = example['domain']
-        return input_ids, token_type_ids, select_index,domain,label
-    else:
-        return input_ids, token_type_ids, select_index
-
-def convert_example_with_lac(example, tokenizer, ratio,max_seq_length=512, is_test=False):
-    TOKEN_MASK_SHAPE = (1,800)
-    query, title = example["text_a"], example["text_b"]
-
-    len_query,len_title = len(query),len(title)
-    if max_seq_length - 3 < len_query + len_title: #超过长度
-        over_size = len_query + len_title - max_seq_length + 3 #超了多少长度
-        l = (over_size + 1) // 2
-        query = query[:l]
-        title = title[:l]
-        example['text_a'] = query
-        example['text_b'] = title
-        warnings.warn("data was cutted!")
-
-
-    ind1, ind2, lac12id, lac22id, dep2id1, dep2id2 = getMaskIndexWithLac(example,example['ratio'] < ratio)
-
-    input_tokens = ['[CLS]'] + [c for c in query] + ['[SEP]'] + [c for c in title] + ['[SEP]']
-    input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
-    token_type_ids = [0] * (len(query) + 2) + [1] * (len(title) + 1)
-    dep_feat = np.concatenate([np.array([0]) , dep2id1 , np.array([0]) , dep2id2 , np.array([0])])
-    lac_feat = np.concatenate([np.array([0]) , lac12id , np.array([0]) , lac22id , np.array([0])]) #
-    sequence_length = len(input_ids)
-    assert  len(input_ids) == len(token_type_ids)
-
-    select_index = np.concatenate([np.ones(TOKEN_MASK_SHAPE),ind1,np.ones(TOKEN_MASK_SHAPE),ind2,np.ones(TOKEN_MASK_SHAPE)])
-    if not is_test:
-        label = np.array([example["label"]], dtype="int64")
-        return input_ids, token_type_ids, select_index,lac_feat,dep_feat,sequence_length,label
-    else:
-        return input_ids, token_type_ids, select_index,lac_feat,dep_feat,sequence_length
-
-
-
-
+from tqdm import tqdm
 if __name__ == "__main__":
     #训前的配置
     rd = RawData()
+    train_df = rd.getTrain()
+    dev_df = rd.getDev()
+    for (ex_index, example) in tqdm(enumerate(train_df.iterrows()), desc="convert examples to features"):
+        if ex_index < 5:
+            print(example)
+            print(example["text_a"])

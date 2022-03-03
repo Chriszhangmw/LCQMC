@@ -50,7 +50,7 @@ def train_base(opt, train_examples, dev_info=None):
 def training(opt):
     processor = DataProcessor()
 
-    train_raw_examples = processor.read_json(os.path.join(opt.raw_data_dir, 'train.json'))
+    train_raw_examples = processor.read_json(os.path.join(opt.raw_data_dir, 'dev.json'))
     train_examples = processor.get_train_examples(train_raw_examples)
 
     dev_info = None

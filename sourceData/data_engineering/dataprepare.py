@@ -47,7 +47,7 @@ DEP_TABLE = {
 'MT':	'虚词成分',
 'HED':	'核心关系',
 }
-ddp = Taskflow("dependency_parsing", model="ddparser-ernie-gram-zh", use_pos=True)
+ddp = Taskflow("dependency_parsing", model="ddparser-ernie-gram-zh", use_pos=True,device_id=4)
 def getPair(s):
     s = s.strip()
     l = len(s)
@@ -74,11 +74,13 @@ def convert(df):
     return df
 
 rd = RawData()
+# print(len(rd.getDev()))
+# print(len(rd.getTrain()))
 train = rd.getTrain()
 dev = rd.getDev()
 data = pd.concat([train,dev])
 
-test = pd.read_csv('../raw_data/test_B_1118.tsv',sep='\t',header=None)
+test = pd.read_csv('../test.tsv',sep='\t',header=None)
 test.columns = ['text_a','text_b']
 
 
@@ -90,8 +92,8 @@ data['text_b'] = data['text_b'].apply(lambda x:x[:100])
 data = data
 
 data = convert(data)
-data.to_csv('./data_new/train_eda.csv',index = None)
+data.to_csv('./train_eda.csv',index = None)
 
 test = convert(test)
-test.to_csv('./data_new/cuted_testB.csv',index=None)
+test.to_csv('./cuted_testB.csv',index=None)
 

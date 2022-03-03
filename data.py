@@ -127,38 +127,38 @@ def convert_example(examples, max_seq_len, tokenizer: BertTokenizer):
                 preds = np.append(preds, [1])
             else:
                 preds = np.append(preds, [0])
-    all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
-    all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
-    all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
-    all_label_ids = torch.tensor([f.label for f in features], dtype=torch.long)
-    dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_label_ids)
-
-    return dataset, preds
-
-
-    # if raw_label is not None:
-    #     raw_label = np.array(raw_label, dtype="int64")
-    # raw_text1 = fine_grade_tokenize(raw_text1, tokenizer)
-    # raw_text2 = fine_grade_tokenize(raw_text2, tokenizer)
-    # encode_dict = tokenizer.encode_plus(text=raw_text1,
-    #                                     text_pair = raw_text2,
-    #                                     max_length=max_seq_len,
-    #                                     truncation = True,
-    #                                     padding='max_length',
-    #                                     is_pretokenized=True,
-    #                                     return_token_type_ids=True,
-    #                                     return_attention_mask=True,return_tensors='pt')
+    # all_input_ids = torch.tensor([f.input_ids for f in features], dtype=torch.long)
+    # all_attention_mask = torch.tensor([f.attention_mask for f in features], dtype=torch.long)
+    # all_token_type_ids = torch.tensor([f.token_type_ids for f in features], dtype=torch.long)
+    # all_label_ids = torch.tensor([f.label for f in features], dtype=torch.long)
+    # dataset = TensorDataset(all_input_ids, all_attention_mask, all_token_type_ids, all_label_ids)
     #
-    # token_ids = encode_dict['input_ids']
-    # attention_masks = encode_dict['attention_mask']
-    # token_type_ids = encode_dict['token_type_ids']
-    #
-    # feature = MCFeature(token_ids=token_ids,
-    #                          attention_masks=attention_masks,
-    #                          token_type_ids=token_type_ids,
-    #                          labels=raw_label)
+    # return dataset, preds
 
-    # return feature
+
+    if raw_label is not None:
+        raw_label = np.array(raw_label, dtype="int64")
+    raw_text1 = fine_grade_tokenize(raw_text1, tokenizer)
+    raw_text2 = fine_grade_tokenize(raw_text2, tokenizer)
+    encode_dict = tokenizer.encode_plus(text=raw_text1,
+                                        text_pair = raw_text2,
+                                        max_length=max_seq_len,
+                                        truncation = True,
+                                        padding='max_length',
+                                        is_pretokenized=True,
+                                        return_token_type_ids=True,
+                                        return_attention_mask=True,return_tensors='pt')
+
+    token_ids = encode_dict['input_ids']
+    attention_masks = encode_dict['attention_mask']
+    token_type_ids = encode_dict['token_type_ids']
+
+    feature = MCFeature(token_ids=token_ids,
+                             attention_masks=attention_masks,
+                             token_type_ids=token_type_ids,
+                             labels=raw_label)
+
+    return feature
 
 class BaseDataset(Dataset):
     def __init__(self, features, mode):

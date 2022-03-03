@@ -50,76 +50,76 @@ class RDropLoss(nn.Module):
         q_loss = q_loss.sum()
         loss = (p_loss + q_loss) / 2
         return loss
-#
-# class QuestionMatching(nn.Module):
-#     def __init__(self, bert_dir, dropout=None, rdrop_coef=0.1):
-#         super().__init__()
-#         config_path = os.path.join(bert_dir, 'config.json')
-#         assert os.path.exists(bert_dir) and os.path.exists(config_path), \
-#             'pretrained bert file does not exist'
-#         self.ptm = BertModel.from_pretrained(bert_dir)
-#         self.dropout = nn.Dropout(dropout if dropout is not None else 0.1)
-#         self.bert_config = self.ptm.config
-#         hidden_size = self.bert_config.hidden_size
-#         self.classifier = nn.Linear(hidden_size, 2)
-#         self.rdrop_coef = rdrop_coef
-#         self.rdrop_loss = RDropLoss()
-#
-#         self.activation = nn.Softmax()
-#         self.criterion = torch.nn.CrossEntropyLoss()
-#
-#         # self.metric = torchmetrics.Accuracy()
-#         init_blocks = [self.classifier]
-#         self._init_weights(init_blocks, initializer_range=self.bert_config.initializer_range)
-#
-#     def _init_weights(self,blocks, **kwargs):
-#         """
-#                 参数初始化，将 Linear / Embedding / LayerNorm 与 Bert 进行一样的初始化
-#                 """
-#         for block in blocks:
-#             for module in block.modules():
-#                 if isinstance(module, nn.Linear):
-#                     nn.init.zeros_(module.bias)
-#                 elif isinstance(module, nn.Embedding):
-#                     nn.init.normal_(module.weight, mean=0, std=kwargs.pop('initializer_range', 0.02))
-#                 elif isinstance(module, nn.LayerNorm):
-#                     nn.init.zeros_(module.bias)
-#                     nn.init.ones_(module.weight)
-#
-#     def forward(self,
-#                 token_ids,
-#                 token_type_ids=None,
-#                 position_ids=None,
-#                 attention_masks=None,
-#                 labels=None,
-#                 do_evaluate=False):
-#         token_ids = torch.squeeze(token_ids)
-#         token_type_ids = torch.squeeze(token_type_ids)
-#         attention_masks = torch.squeeze(attention_masks)
-#         bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
-#                                      attention_masks)
-#         cls_embedding1 = bert_outputs[1]
-#         cls_embedding1 = self.dropout(cls_embedding1)
-#         logits1 = self.classifier(cls_embedding1)
-#         # For more information about R-drop please refer to this paper: https://arxiv.org/abs/2106.14448
-#         # Original implementation please refer to this code: https://github.com/dropreg/R-Drop
-#         if self.rdrop_coef > 0 and not do_evaluate:
-#             bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
-#                                          attention_masks)
-#             cls_embedding2 = bert_outputs[1]
-#             cls_embedding2 = self.dropout(cls_embedding2)
-#             logits2 = self.classifier(cls_embedding2)
-#             kl_loss = self.rdrop_loss(logits1, logits2)
-#         else:
-#             kl_loss = 0.0
-#         celoss  = self.criterion(logits1, labels)
-#         loss = celoss + self.rdrop_coef * kl_loss
-#
-#         logits1 = self.activation(logits1)
-#         logits1 = (logits1,)
-#         out = (loss,) + logits1
-#
-#         return out
+
+class QuestionMatching(nn.Module):
+    def __init__(self, bert_dir, dropout=None, rdrop_coef=0.1):
+        super().__init__()
+        config_path = os.path.join(bert_dir, 'config.json')
+        assert os.path.exists(bert_dir) and os.path.exists(config_path), \
+            'pretrained bert file does not exist'
+        self.ptm = BertModel.from_pretrained(bert_dir)
+        self.dropout = nn.Dropout(dropout if dropout is not None else 0.1)
+        self.bert_config = self.ptm.config
+        hidden_size = self.bert_config.hidden_size
+        self.classifier = nn.Linear(hidden_size, 2)
+        self.rdrop_coef = rdrop_coef
+        self.rdrop_loss = RDropLoss()
+
+        self.activation = nn.Softmax()
+        self.criterion = torch.nn.CrossEntropyLoss()
+
+        # self.metric = torchmetrics.Accuracy()
+        init_blocks = [self.classifier]
+        self._init_weights(init_blocks, initializer_range=self.bert_config.initializer_range)
+
+    def _init_weights(self,blocks, **kwargs):
+        """
+                参数初始化，将 Linear / Embedding / LayerNorm 与 Bert 进行一样的初始化
+                """
+        for block in blocks:
+            for module in block.modules():
+                if isinstance(module, nn.Linear):
+                    nn.init.zeros_(module.bias)
+                elif isinstance(module, nn.Embedding):
+                    nn.init.normal_(module.weight, mean=0, std=kwargs.pop('initializer_range', 0.02))
+                elif isinstance(module, nn.LayerNorm):
+                    nn.init.zeros_(module.bias)
+                    nn.init.ones_(module.weight)
+
+    def forward(self,
+                token_ids,
+                token_type_ids=None,
+                position_ids=None,
+                attention_masks=None,
+                labels=None,
+                do_evaluate=False):
+        token_ids = torch.squeeze(token_ids)
+        token_type_ids = torch.squeeze(token_type_ids)
+        attention_masks = torch.squeeze(attention_masks)
+        bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
+                                     attention_masks)
+        cls_embedding1 = bert_outputs[1]
+        cls_embedding1 = self.dropout(cls_embedding1)
+        logits1 = self.classifier(cls_embedding1)
+        # For more information about R-drop please refer to this paper: https://arxiv.org/abs/2106.14448
+        # Original implementation please refer to this code: https://github.com/dropreg/R-Drop
+        if self.rdrop_coef > 0 and not do_evaluate:
+            bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
+                                         attention_masks)
+            cls_embedding2 = bert_outputs[1]
+            cls_embedding2 = self.dropout(cls_embedding2)
+            logits2 = self.classifier(cls_embedding2)
+            kl_loss = self.rdrop_loss(logits1, logits2)
+        else:
+            kl_loss = 0.0
+        celoss  = self.criterion(logits1, labels)
+        loss = celoss + self.rdrop_coef * kl_loss
+
+        logits1 = self.activation(logits1)
+        logits1 = (logits1,)
+        out = (loss,) + logits1
+
+        return out
 
 
 
@@ -137,7 +137,7 @@ from torch.nn import CrossEntropyLoss
 
 from transformers import BertPreTrainedModel, BertModel, PretrainedConfig, PreTrainedModel
 
-class QuestionMatching(BertPreTrainedModel):
+class QuestionMatching2(BertPreTrainedModel):
     def __init__(self, config, rdrop_coef = 0.1):
         super().__init__(config)
         self.rdrop_coef = rdrop_coef
@@ -263,28 +263,6 @@ class QuestionMatchingLast3EmbeddingCls(BertPreTrainedModel):
         output = (logits1, ) + outputs[2:]
 
         return ((loss,) + output) if loss is not None else output
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
