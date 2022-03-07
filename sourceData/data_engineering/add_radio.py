@@ -22,23 +22,21 @@ def removeOral(string):
             return tmp
     return string
 def main():
-    df = pd.read_csv('./train_eda.csv')
+    df = pd.read_csv('./train_eda_t.csv',sep='\t')
 
     df['text_a'] = df['text_a'].apply(removeOral)
     df['text_b'] = df['text_b'].apply(removeOral)
     df['ratio'] = df.apply(lambda x: fuzz.ratio(x.text_a, x.text_b), axis=1)  # 编辑距离
-    df.to_csv('./train_eda_ratio.csv',index = None)
+    df.to_csv('./train_eda_t_ratio.csv',index = None,sep='\t')
 
 
-    test = pd.read_csv('./cuted_testB.csv')
+    test = pd.read_csv('./test_t.csv',sep='\t')
 
     test['text_a'] = test['text_a'].apply(removeOral)
     test['text_b'] = test['text_b'].apply(removeOral)
     test['ratio'] = test.apply(lambda x: fuzz.ratio(x.text_a, x.text_b), axis=1)  # 编辑距离
-    test.to_csv('./test_eda_ratio.csv',index = None)
+    test.to_csv('./test_t_ratio.csv',index = None,sep='\t')
 
 
 if __name__ == "__main__":
-    a = "成都哪里的牛肉火锅最好吃呢"
-    b = "成都哪里的牛肉火锅最好吃"
-    print(fuzz.ratio(a,b))
+    main()

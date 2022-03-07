@@ -92,8 +92,7 @@ data['text_b'] = data['text_b'].apply(lambda x:x[:100])
 data = data
 
 data = convert(data)
-data.to_csv('./train_eda.csv',index = None)
-
+data.to_csv('./train_eda_t.csv',index = None,sep='\t')
 test = convert(test)
-test.to_csv('./cuted_testB.csv',index=None)
+test.to_csv('./test_t.csv',index=None,sep='\t')
 

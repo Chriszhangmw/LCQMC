@@ -4,7 +4,7 @@ from config import lac2id, dep2id
 from model_addFeatures import QuestionMatchingOtherTeatures
 from transformers import BertTokenizer
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset,IterableDataset
 from tqdm import tqdm
 from functions_utils import set_seed, get_model_path_list, load_model_and_parallel
 import copy
@@ -46,8 +46,8 @@ def getMaskIndexWithLac(example ,all_select):
 
     dep2id1 = np.zeros(len(x1))
     dep2id2 = np.zeros(len(x2))
-    if len(s1) != len(lac1) or len(s1) != len(deprel1):
-        print(s1,type(s1))
+    # if len(s1) != len(lac1) or len(s1) != len(deprel1):
+    #     print(s1,type(s1))
 
     assert len(s1) == len(lac1) and len(s1) == len(deprel1),'长度不一致！%s _ %s _ %s' % (len(s1),len(lac1),len(deprel1))
     assert len(s2) == len(lac2) and len(s2) == len(deprel2), '长度不一致！！%s _ %s _ %s'% (len(s2),len(lac2),len(deprel2))
@@ -106,8 +106,8 @@ class QMFeature:
         self.dep_ids = dep_ids
         self.sequence_length = sequence_length
         self.labels = labels
-
-def convert_example_with_lac(example,opt, is_test=False):
+opt = TrainArgs().get_parser()
+def convert_example_with_lac_bak(example, is_test=False):
     ratio = opt.ratio
     tokenizer = BertTokenizer.from_pretrained(opt.bert_dir)
     max_seq_length = opt.max_seq_len
@@ -124,9 +124,7 @@ def convert_example_with_lac(example,opt, is_test=False):
         example['text_b'] = title
         print("data was cutted!")
 
-
     ind1, ind2, lac12id, lac22id, dep2id1, dep2id2 = getMaskIndexWithLac(example,int(example['ratio']) < ratio)
-
     input_tokens = ['[CLS]'] + [c for c in query] + ['[SEP]'] + [c for c in title] + ['[SEP]']
     input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
     token_type_ids = [0] * (len(query) + 2) + [1] * (len(title) + 1)
@@ -164,7 +162,78 @@ def convert_example_with_lac(example,opt, is_test=False):
         pad_metrics = np.zeros((pad_select_index,800))
         select_index = np.concatenate([select_index,pad_metrics])
 
-    label = np.array([example["label"]], dtype="int64")
+    label = np.array([int(float(example["label"]))], dtype="int64")
+    assert len(input_ids) == max_seq_length
+    assert len(token_type_ids) == max_seq_length
+    assert len(attention_mask) == max_seq_length
+    assert len(select_index) == max_seq_length
+    assert len(lac_feat) == max_seq_length
+    assert len(dep_feat) == max_seq_length
+    qm = QMFeature(input_ids = input_ids,
+                   token_type_ids = token_type_ids,
+                   attention_mask = attention_mask,
+                   select_tokens = select_index,
+                   lac_ids = lac_feat,
+                   dep_ids = dep_feat,
+                   sequence_length = sequence_length,
+                   labels = label)
+    return qm
+def convert_example_with_lac(example, is_test=False):
+    ratio = opt.ratio
+    tokenizer = BertTokenizer.from_pretrained(opt.bert_dir)
+    max_seq_length = opt.max_seq_len
+    TOKEN_MASK_SHAPE = (1,800)
+    query, title = example["text_a"], example["text_b"]
+
+    len_query,len_title = len(query),len(title)
+    if max_seq_length - 3 < len_query + len_title: #超过长度
+        over_size = len_query + len_title - max_seq_length + 3 #超了多少长度
+        l = (over_size + 1) // 2
+        query = query[:l]
+        title = title[:l]
+        example['text_a'] = query
+        example['text_b'] = title
+        print("data was cutted!")
+
+    ind1, ind2, lac12id, lac22id, dep2id1, dep2id2 = getMaskIndexWithLac(example,int(example['ratio']) < ratio)
+    input_tokens = ['[CLS]'] + [c for c in query] + ['[SEP]'] + [c for c in title] + ['[SEP]']
+    input_ids = tokenizer.convert_tokens_to_ids(input_tokens)
+    token_type_ids = [0] * (len(query) + 2) + [1] * (len(title) + 1)
+
+    attention_mask = [1] * len(input_ids)
+
+    padding = [0] * (max_seq_length - len(input_ids))
+    input_ids += padding
+    attention_mask += padding
+    token_type_ids += padding
+
+    input_ids = input_ids[:max_seq_length]
+    attention_mask = attention_mask[:max_seq_length]
+    token_type_ids = token_type_ids[:max_seq_length]
+
+    dep_feat = np.concatenate([np.array([0]) , dep2id1 , np.array([0]) , dep2id2 , np.array([0])])
+    lac_feat = np.concatenate([np.array([0]) , lac12id , np.array([0]) , lac22id , np.array([0])]) #
+    pad_dep_len = max_seq_length - len(dep_feat)
+    pad_lac_len = max_seq_length - len(lac_feat)
+    if pad_dep_len > 0:
+        pad_1 = np.array([0]*pad_dep_len)
+        dep_feat = np.concatenate([dep_feat,pad_1])
+    if pad_lac_len > 0:
+        pad_2 =  np.array([0]*pad_lac_len)
+        lac_feat = np.concatenate([lac_feat, pad_2])
+
+
+    sequence_length = len(input_ids)
+    assert  len(input_ids) == len(token_type_ids)
+
+    select_index = np.concatenate([np.ones(TOKEN_MASK_SHAPE),ind1,np.ones(TOKEN_MASK_SHAPE),ind2,
+                                   np.ones(TOKEN_MASK_SHAPE)])
+    pad_select_index = max_seq_length - 3 - len(ind1) - len(ind2)
+    if pad_select_index > 0:
+        pad_metrics = np.zeros((pad_select_index,800))
+        select_index = np.concatenate([select_index,pad_metrics])
+
+    label = np.array([int(float(example["label"]))], dtype="int64")
     assert len(input_ids) == max_seq_length
     assert len(token_type_ids) == max_seq_length
     assert len(attention_mask) == max_seq_length
@@ -182,25 +251,71 @@ def convert_example_with_lac(example,opt, is_test=False):
     return qm
 
 
+from multiprocessing import Pool
+from functools import partial
+
+def process_line(prefix, line):
+    return prefix + ": %s" % line
+
+def multi_process_line(lines, prefix):
+    partial_process_line = partial(process_line, prefix)
+    threads = 4
+    pool = Pool(threads)
+
+    results = pool.map(partial_process_line, lines)
+    return results
 
 class BaseDataset(Dataset):
-    def __init__(self, features):
-        self.nums = len(features)
-        self.input_ids = [torch.tensor(example.input_ids).long() for example in features]
-        self.attention_mask = [torch.tensor(example.attention_mask).long() for example in features]
-        self.token_type_ids = [torch.tensor(example.token_type_ids).long() for example in features]
-        self.select_tokens = [torch.tensor(example.select_tokens).long() for example in features]
-        self.lac_ids = [torch.tensor(example.lac_ids).long() for example in features]
-        self.dep_ids = [torch.tensor(example.dep_ids).long() for example in features]
-        self.labels = [torch.tensor(example.labels) for example in features]
+
+    def __init__(self, opt):
+        self.opt = opt
+        # self.input_ids = [torch.tensor(example.input_ids).long() for example in features]
+        # self.attention_mask = [torch.tensor(example.attention_mask).long() for example in features]
+        # self.token_type_ids = [torch.tensor(example.token_type_ids).long() for example in features]
+        # self.select_tokens = [torch.tensor(example.select_tokens).long() for example in features]
+        # self.lac_ids = [torch.tensor(example.lac_ids).long() for example in features]
+        # self.dep_ids = [torch.tensor(example.dep_ids).long() for example in features]
+        # self.labels = [torch.tensor(example.labels) for example in features]
+
+        self.input_ids,self.attention_mask,self.token_type_ids,self.select_tokens,self.lac_ids,self.dep_ids,self.labels = self.read_mag_file(opt)
+
+        # data = None
+        # train_df = data.iloc[:-28802, :]
+        # # start dev
+        # dev_features = []
+        # for (ex_index, example) in tqdm(enumerate(train_df.iterrows()), desc="convert dev_df examples to features"):
+        #     example = example[1]
+        #     example = dict(example)
+        #     dev_feature = convert_example_with_lac(example, opt)
+        #     dev_features.append(dev_feature)
+        # dev_dataset = QMDataset(dev_features)
+
+    def read_mag_file(self,opt):
+        data = pd.read_csv(opt.file_path)
+        # dev_df = data.iloc[-28802:, :]
+        train_df = data.iloc[:-28802, :]
+        train_features = []
+        for (ex_index, example) in tqdm(enumerate(train_df.iterrows()), desc="convert dev_df examples to features"):
+            example = example[1]
+            example = dict(example)
+            dev_feature = convert_example_with_lac(example, self.opt)
+            train_features.append(dev_feature)
+        input_ids = [torch.tensor(example.input_ids).long() for example in train_features]
+        attention_mask = [torch.tensor(example.attention_mask).long() for example in train_features]
+        token_type_ids = [torch.tensor(example.token_type_ids).long() for example in train_features]
+        select_tokens = [torch.tensor(example.select_tokens).long() for example in train_features]
+        lac_ids = [torch.tensor(example.lac_ids).long() for example in train_features]
+        dep_ids = [torch.tensor(example.dep_ids).long() for example in train_features]
+        labels = [torch.tensor(example.labels) for example in train_features]
+        return input_ids,attention_mask,token_type_ids,select_tokens,lac_ids,dep_ids,labels
+
+
     def __len__(self):
-        return self.nums
+        return len(self.labels)
 
 class QMDataset(BaseDataset):
-    def __init__(self,
-                 features
-                 ):
-        super(QMDataset, self).__init__(features)
+    def __init__(self,opt):
+        super(QMDataset, self).__init__(opt)
     def __getitem__(self, index):
         data = {'input_ids': self.input_ids[index],'attention_mask': self.attention_mask[index],
                 'token_type_ids': self.token_type_ids[index], 'select_tokens': self.select_tokens[index],
@@ -280,15 +395,46 @@ def save_model(opt, model, global_step):
     print(f'Saving model & optimizer & scheduler checkpoint to {output_dir}')
     torch.save(model_to_save.state_dict(), os.path.join(output_dir, 'model.pt'))
 
+def _collate_fn(batch):
+    train_features = []
+    minibatch_size = len(batch)
+    for x in range(minibatch_size):
+        sample = batch[x]
+        try:
+            sample=convert_example_with_lac(sample)
+        except:
+            continue
+        train_features.append(sample)
+
+    input_ids = [example.input_ids for example in train_features]
+    attention_mask = [example.attention_mask for example in train_features]
+    token_type_ids = [example.token_type_ids for example in train_features]
+    select_tokens = [example.select_tokens for example in train_features]
+    lac_ids = [example.lac_ids for example in train_features]
+    dep_ids = [example.dep_ids for example in train_features]
+    labels = [example.labels for example in train_features]
+    input_ids = torch.LongTensor(input_ids)
+    attention_mask = torch.LongTensor(attention_mask)
+    token_type_ids = torch.LongTensor(token_type_ids)
+    select_tokens = torch.LongTensor(select_tokens)
+    lac_ids = torch.LongTensor(lac_ids)
+    dep_ids = torch.LongTensor(dep_ids)
+    labels = torch.LongTensor(labels)
+    batch_data =  {"input_ids":input_ids, "attention_mask": attention_mask,
+                   "token_type_ids":token_type_ids,"select_tokens":select_tokens,
+                   "lac_ids":lac_ids,"dep_ids":dep_ids,"labels":labels}
+    return batch_data
+
+
 def train(opt,model,train_dataset):
     swa_raw_model = copy.deepcopy(model)
 
-    train_sampler = RandomSampler(train_dataset)
+    # train_sampler = RandomSampler(train_dataset)
 
     train_loader = DataLoader(dataset=train_dataset,
                               batch_size=opt.train_batch_size,
-                              sampler=train_sampler,
-                              num_workers=0)
+                              shuffle=False,
+                              num_workers=0,collate_fn=_collate_fn)
     model, device = load_model_and_parallel(model, opt.gpu_ids)
 
     use_n_gpus = False
@@ -312,11 +458,12 @@ def train(opt,model,train_dataset):
     eval_steps = save_steps
     print(f'Save model in {save_steps} steps; Eval model in {eval_steps} steps')
 
-    log_loss_steps = 2000
+    log_loss_steps = 20
     avg_loss = 0.
     for epoch in range(opt.train_epochs):
         for step, batch_data in enumerate(train_loader):
             model.train()
+            # print(batch_data)
             for key in batch_data.keys():
                 batch_data[key] = batch_data[key].to(device)
             loss,logits1 = model(**batch_data)
@@ -363,51 +510,145 @@ def train(opt,model,train_dataset):
 
 
 def main(opt):
-    data = pd.read_csv('./sourceData/data_engineering/train_eda_ratio.csv')
-    # dev_df = data.iloc[-28802:, :]
-    # train_df = data.iloc[:-28802, :]
-    train_df = data.iloc[-200:, :]
-    dev_df = data.iloc[-200:, :]
-    # train_features = []
-    # for (ex_index, example) in tqdm(enumerate(train_df.iterrows()), desc="convert examples to features"):
-    #     example = example[1]
-    #     example = dict(example)
-    #     train_feature = convert_example_with_lac(example,  opt)
-    #     train_features.append(train_feature)
-    # train_dataset = QMDataset(train_features)
+
+    train_dataset = MQDatasetIter(opt)
     model = QuestionMatchingOtherTeatures(opt)
-    # train(opt,model,train_dataset)
-
-    #start dev
-    dev_features = []
-    for (ex_index, example) in tqdm(enumerate(dev_df.iterrows()), desc="convert dev_df examples to features"):
-        example = example[1]
-        example = dict(example)
-        dev_feature = convert_example_with_lac(example, opt)
-        dev_features.append(dev_feature)
-    dev_dataset = QMDataset(dev_features)
-    dev_loader = DataLoader(dev_dataset, batch_size=opt.eval_batch_size,
-                            shuffle=False, num_workers=8)
-    model_path_list = get_model_path_list(opt.output_dir)
-    max_acc = 0.
-    max_acc_step = 0
-    performance = {}
-    for idx, model_path in enumerate(model_path_list):
-        tmp_step = model_path.split('/')[-2].split('-')[-1]
-        model, device = load_model_and_parallel(model, opt.gpu_ids[0],
-                                                ckpt_path=model_path)
-        acc = mc_evaluation(model, dev_loader, device)
-        performance[tmp_step] = acc
-        if acc > max_acc:
-            max_acc = acc
-            max_acc_step = tmp_step
-
-    max_metric_str = f'Max Accuracy is: {max_acc}, in step {max_acc_step}'
-    print(max_metric_str)
-    print('*'*10 + " performance summary "+"*"*10)
-    print(performance)
+    train(opt,model,train_dataset)
 
 
+
+import math
+class MQDatasetIter(IterableDataset):
+    def __init__(self,opt):
+        super(MQDatasetIter).__init__()
+        self.opt = opt
+        self.file_path = opt.train_file_path
+        self.info = self._get_file_info(self.file_path)
+        self.start = self.info['start']
+        self.end = self.info['end']
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:  # single worker
+            iter_start = self.start
+            iter_end = self.end
+        else:  # multiple workers
+            per_worker = int(math.ceil((self.end - self.start) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = self.start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, self.end)
+        sample_iterator = self._sample_generator(iter_start, iter_end)
+        return sample_iterator
+
+    def __len__(self):
+        return self.end - self.start
+
+    def _get_file_info(self,file_path):
+        info = {
+            "start": 1,
+            "end": 0,
+            "text_a": 0,
+            "text_b": 1,
+            "label": 2,
+            "word_a": 4,
+            "deprel_a": 6,
+            "postag_a": 7,
+            "word_b": 8,
+            "deprel_b": 10,
+            "postag_b": 11,
+            "ratio":12
+        }
+        with open(file_path, 'r') as fin:
+            for _ in enumerate(fin):
+                info['end'] += 1
+        return info
+
+    def _sample_generator(self, start, end):
+        text_a,text_b,label,word_a,deprel_a,\
+        postag_a,word_b,deprel_b,postag_b,ratio= self.info['text_a'], self.info['text_b'], \
+                                                 self.info['label'],self.info['word_a'],\
+                                                 self.info['deprel_a'],self.info['postag_a'],\
+                                                 self.info['word_b'],self.info['deprel_b'],\
+                                                 self.info['postag_b'],self.info['ratio']
+        with open(self.file_path, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i < start: continue
+                if i >= end: return StopIteration()
+                items = line.strip().split('\t')
+                if len(items) != 13:
+                    continue
+                sample = {"text_a": items[text_a], "text_b": items[text_b], "label": items[label],
+                          "word_a": items[word_a], "deprel_a": items[deprel_a],
+                          "postag_a": items[postag_a],
+                          "word_b": items[word_b], "deprel_b": items[deprel_b],
+                          "postag_b": items[postag_b],
+                          "ratio": items[ratio]}
+                yield sample
+
+class MQDatasetIter_dev(IterableDataset):
+    def __init__(self,opt):
+        super(MQDatasetIter).__init__()
+        self.opt = opt
+        self.file_path = opt.dev_file_path
+        self.info = self._get_file_info(self.file_path)
+        self.start = self.info['start']
+        self.end = self.info['end']
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:  # single worker
+            iter_start = self.start
+            iter_end = self.end
+        else:  # multiple workers
+            per_worker = int(math.ceil((self.end - self.start) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = self.start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, self.end)
+        sample_iterator = self._sample_generator(iter_start, iter_end)
+        return sample_iterator
+
+    def __len__(self):
+        return self.end - self.start
+
+    def _get_file_info(self,file_path):
+        info = {
+            "start": 1,
+            "end": 0,
+            "text_a": 0,
+            "text_b": 1,
+            "label": 2,
+            "word_a": 4,
+            "deprel_a": 6,
+            "postag_a": 7,
+            "word_b": 8,
+            "deprel_b": 10,
+            "postag_b": 11,
+            "ratio":12
+        }
+        with open(file_path, 'r') as fin:
+            for _ in enumerate(fin):
+                info['end'] += 1
+        return info
+
+    def _sample_generator(self, start, end):
+        text_a,text_b,label,word_a,deprel_a,\
+        postag_a,word_b,deprel_b,postag_b,ratio= self.info['text_a'], self.info['text_b'], \
+                                                 self.info['label'],self.info['word_a'],\
+                                                 self.info['deprel_a'],self.info['postag_a'],\
+                                                 self.info['word_b'],self.info['deprel_b'],\
+                                                 self.info['postag_b'],self.info['ratio']
+        with open(self.file_path, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i < start: continue
+                if i >= end: return StopIteration()
+                items = line.strip().split('\t')
+                sample = {"text_a": items[text_a], "text_b": items[text_b], "label": items[label],
+                          "word_a": items[word_a], "deprel_a": items[deprel_a],
+                          "postag_a": items[postag_a],
+                          "word_b": items[word_b], "deprel_b": items[deprel_b],
+                          "postag_b": items[postag_b],
+                          "ratio": items[ratio]}
+                yield sample
 
 if __name__ == "__main__":
     args = TrainArgs().get_parser()
@@ -418,8 +659,6 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
     main(args)
-
-
 
 
 

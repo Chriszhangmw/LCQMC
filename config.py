@@ -14,14 +14,26 @@ class BaseArgs:
         parser.add_argument('--raw_data_dir', default='/home/zmw/projects/question_matching/sourceData',
                             help='the data dir of raw data')
 
+
+        parser.add_argument('--train_file_path', default="/home/zmw/projects/question_matching/sourceData/data_engineering/train_eda_t_ratio.csv",
+                            help='the data dir of raw data')
+        parser.add_argument('--dev_file_path',
+                            default="/home/zmw/projects/question_matching/sourceData/data_engineering/dev_eda_t_ratio.csv",
+                            help='the data dir of raw data')
         parser.add_argument('--output_dir', default='/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/',
                             help='the output dir for model checkpoints')
+        parser.add_argument('--cache_dir', default='/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/cache',
+                            help='the cache dir for data')
 
         parser.add_argument('--bert_dir', default='/home/zmw/big_space/zhangmeiwei_space/pre_models/pytorch/chinese_roberta_wwm_ext_pytorch',
                             help='bert dir for ernie / roberta-wwm / uer / semi-bert')
 
         parser.add_argument('--bert_type', default='roberta_wwm',
                             help='roberta_wwm / ernie_1 / uer_large for bert')
+
+        parser.add_argument('--overwrite_cache', default=False,
+                            help='overwrite_cache')
+
 
         # other args
         parser.add_argument('--gpu_ids', type=str, default='3,4',
@@ -30,19 +42,19 @@ class BaseArgs:
         parser.add_argument('--ratio', type=float, default=70,
                             help='ratio for sentence distence')
         parser.add_argument('--gru_hidden_size', type=int, default=8,
-                            help='ratio for sentence distence')
+                            help='gru_hidden_size')
         parser.add_argument('--hidden_dropout_prob', type=float, default=0.2,
-                            help='ratio for sentence distence')
+                            help='hidden_dropout_prob')
         parser.add_argument('--gru_layers', type=int, default=1,
-                            help='ratio for sentence distence')
+                            help='gru_layers')
         parser.add_argument('--lac_vocab_size', type=int, default=49,
-                            help='ratio for sentence distence')
+                            help='lac_vocab_size')
         parser.add_argument('--dep_vocab_size', type=int, default=29,
-                            help='ratio for sentence distence')
+                            help='dep_vocab_size')
         parser.add_argument('--gru_emb_dim', type=int, default=4,
-                            help='ratio for sentence distence')
+                            help='gru_emb_dim')
         parser.add_argument('--gru_dropout_rate', type=float, default=0.1,
-                            help='ratio for sentence distence')
+                            help='gru_dropout_rate')
 
 
 
