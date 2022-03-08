@@ -1,2 +1,2 @@
-# LCQMC
-LCQMC text matching
+# sentence similarity caculation
+text matching
