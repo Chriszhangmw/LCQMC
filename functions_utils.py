@@ -30,7 +30,6 @@ def load_model_and_parallel(model, gpu_ids, ckpt_path=None, strict=True):
     """
     加载模型 & 放置到 GPU 中（单卡 / 多卡）
     """
-
     gpu_ids = gpu_ids.split(',')
 
     # set to device to the first cuda

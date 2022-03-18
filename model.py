@@ -10,16 +10,6 @@ from torch.nn import functional as F
 
 
 class RDropLoss(nn.Module):
-    """
-    R-Drop Loss implementation
-        reduction(str, optional):
-            Indicate how to average the loss, the candicates are ``'none'``,``'batchmean'``,``'mean'``,``'sum'``.
-            If `reduction` is ``'mean'``, the reduced mean loss is returned;
-            If `reduction` is ``'batchmean'``, the sum loss divided by batch size is returned;
-            If `reduction` is ``'sum'``, the reduced sum loss is returned;
-            If `reduction` is ``'none'``, no reduction will be applied.
-            Defaults to ``'none'``.
-    """
     def __init__(self, reduction='none'):
         super(RDropLoss, self).__init__()
         if reduction not in ['sum', 'mean', 'none', 'batchmean']:
@@ -29,14 +19,6 @@ class RDropLoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, p, q, pad_mask=None):
-        """
-        Args:
-            p(Tensor): the first forward logits of training examples.
-            q(Tensor): the second forward logits of training examples.
-            pad_mask(Tensor, optional): The Tensor containing the binary mask to index with, it's data type is bool.
-        Returns:
-            Tensor: Returns tensor `loss`, the rdrop loss of p and q.
-        """
         p_loss = F.kl_div(F.log_softmax(p, dim=-1), F.softmax(q, dim=-1)).sum(-1)
         q_loss = F.kl_div(F.log_softmax(q, dim=-1), F.softmax(p, dim=-1)).sum(-1)
 
@@ -101,8 +83,6 @@ class QuestionMatching(nn.Module):
         cls_embedding1 = bert_outputs[1]
         cls_embedding1 = self.dropout(cls_embedding1)
         logits1 = self.classifier(cls_embedding1)
-        # For more information about R-drop please refer to this paper: https://arxiv.org/abs/2106.14448
-        # Original implementation please refer to this code: https://github.com/dropreg/R-Drop
         if self.rdrop_coef > 0 and not do_evaluate:
             bert_outputs = self.ptm(token_ids, token_type_ids, position_ids,
                                          attention_masks)
@@ -112,7 +92,7 @@ class QuestionMatching(nn.Module):
             kl_loss = self.rdrop_loss(logits1, logits2)
         else:
             kl_loss = 0.0
-        celoss  = self.criterion(logits1, labels)
+        celoss  = self.criterion(logits1, labels.squeeze())
         loss = celoss + self.rdrop_coef * kl_loss
 
         logits1 = self.activation(logits1)
@@ -199,37 +179,36 @@ class QuestionMatching2(BertPreTrainedModel):
         output = (logits1, ) + outputs[2:]
         return ((loss,) + output) if loss is not None else output
 
-class QuestionMatchingLast3EmbeddingCls(BertPreTrainedModel):
-    def __init__(self, config, rdrop_coef = 0.0):
-        super().__init__(config)
+class QuestionMatchingLast3EmbeddingCls(nn.Module):
+    def __init__(self, bert_dir, rdrop_coef = 0):
+        super().__init__()
 
         self.rdrop_coef = rdrop_coef
-        self.num_labels = config.num_labels
-        self.hidden_size = config.hidden_size
-        self.hidden_size_last4 = config.hidden_size * 4
-        self.dropout_prob = config.hidden_dropout_prob
-        config.output_hidden_states = True
-        self.bert = BertModel(config)
+        self.num_labels = 2
+        self.bert = BertModel.from_pretrained(bert_dir)
+        self.bert_config = self.bert.config
+        hidden_size = self.bert.config.hidden_size
+        self.hidden_size = hidden_size
+        self.hidden_size_last4 = self.hidden_size * 4
+        self.dropout_prob =0.2
+        self.bert_config.output_hidden_states = True
 
         self.dropout = nn.Dropout(self.dropout_prob)
         self.classifier = nn.Linear(self.hidden_size, self.num_labels)
         self.last_classifier = nn.Linear(self.hidden_size_last4, self.num_labels)
-
+        self.activation = nn.Softmax()
         self.rdrop_loss = RDropLoss()
-
-        self.init_weights()
 
     def forward(
             self,
-            input_ids = None,       #g:输入维度(batch_size, max_seq_length)
-            attention_mask = None,
+            token_ids = None,       #g:输入维度(batch_size, max_seq_length)
+            attention_masks = None,
             token_type_ids = None,
             labels = None,          #g:输出维度 (batch_size, label)
     ):
-
         outputs = self.bert(
-            input_ids,
-            attention_mask = attention_mask,
+            token_ids,
+            attention_mask = attention_masks,
             token_type_ids = token_type_ids,
         )
 
@@ -242,13 +221,13 @@ class QuestionMatchingLast3EmbeddingCls(BertPreTrainedModel):
         logits1 = self.last_classifier(last_output_linear)
         if self.rdrop_coef > 0:
             outputs2 = self.bert(
-                input_ids,
-                attention_mask=attention_mask,
+                token_ids,
+                attention_mask=attention_masks,
                 token_type_ids=token_type_ids,
             )
             pooled_output2 = outputs2[1]
             hidden_output2 = outputs2[2]
-            last_cat2 = torch.cat((pooled_output2, hidden_output2[-1][:, 0], hidden_output2[-2][:, 0]), 1)
+            last_cat2 = torch.cat((pooled_output2, hidden_output2[-1][:, 0], hidden_output2[-2][:, 0],hidden_output[-3][:, 0]), 1)
             last_output_linear2 = self.dropout(last_cat2)
             logits2 = self.last_classifier(last_output_linear2)
             kl_loss = self.rdrop_loss(logits1, logits2)
@@ -257,12 +236,13 @@ class QuestionMatchingLast3EmbeddingCls(BertPreTrainedModel):
         nll_loss = None
         if labels is not None:
             loss_fct = CrossEntropyLoss()
-            nll_loss = loss_fct(logits1, labels)
+            nll_loss = loss_fct(logits1, labels.squeeze())
         loss = nll_loss + self.rdrop_coef * kl_loss
 
-        output = (logits1, ) + outputs[2:]
-
-        return ((loss,) + output) if loss is not None else output
+        logits1 = self.activation(logits1)
+        logits1 = (logits1,)
+        out = (loss,) + logits1
+        return out
 
 
 

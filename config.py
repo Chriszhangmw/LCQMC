@@ -14,16 +14,22 @@ class BaseArgs:
         parser.add_argument('--raw_data_dir', default='/home/zmw/projects/question_matching/sourceData',
                             help='the data dir of raw data')
 
+        parser.add_argument('--file_path',
+                            default="/home/zmw/projects/question_matching/sourceData/data_engineering/train_eda_t_ratio_bak.csv",
+                            help='the data dir of raw data')
 
         parser.add_argument('--train_file_path', default="/home/zmw/projects/question_matching/sourceData/data_engineering/train_eda_t_ratio.csv",
                             help='the data dir of raw data')
         parser.add_argument('--dev_file_path',
                             default="/home/zmw/projects/question_matching/sourceData/data_engineering/dev_eda_t_ratio.csv",
                             help='the data dir of raw data')
-        parser.add_argument('--output_dir', default='/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/',
+        parser.add_argument('--test_file_path',
+                            default="/home/zmw/projects/question_matching/sourceData/data_engineering/test_t_ratio.csv",
+                            help='the data dir of raw data')
+
+        parser.add_argument('--output_dir', default='/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/basemodel/',
                             help='the output dir for model checkpoints')
-        parser.add_argument('--cache_dir', default='/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/cache',
-                            help='the cache dir for data')
+
 
         parser.add_argument('--bert_dir', default='/home/zmw/big_space/zhangmeiwei_space/pre_models/pytorch/chinese_roberta_wwm_ext_pytorch',
                             help='bert dir for ernie / roberta-wwm / uer / semi-bert')
@@ -36,7 +42,7 @@ class BaseArgs:
 
 
         # other args
-        parser.add_argument('--gpu_ids', type=str, default='3,4',
+        parser.add_argument('--gpu_ids', type=str, default='3,4',#3,4
                             help='gpu ids to use, -1 for cpu, "1, 3" for multi gpu')
 
         parser.add_argument('--ratio', type=float, default=70,
@@ -88,10 +94,10 @@ class TrainArgs(BaseArgs):
                             help='rdrop_coef')
 
         parser.add_argument('--lr', default=5e-5, type=float,
-                            help='learning rate for the bert module')
+                            help='learning rate for the bert module')#1e-5
 
-        parser.add_argument('--other_lr', default=2e-4, type=float,
-                            help='learning rate for the module except bert')
+        parser.add_argument('--other_lr', default=0.01, type=float,
+                            help='learning rate for the module except bert')#2e-4
 
         parser.add_argument('--max_grad_norm', default=1.0, type=float,
                             help='max grad clip')
@@ -101,7 +107,7 @@ class TrainArgs(BaseArgs):
         parser.add_argument('--weight_decay', default=0., type=float)
 
         parser.add_argument('--adam_epsilon', default=1e-8, type=float)
-        parser.add_argument('--train_batch_size', default=64, type=int)
+        parser.add_argument('--train_batch_size', default=32, type=int)
         parser.add_argument('--eval_model', default=True, action='store_true',
                             help='whether to eval model after training')
         parser.add_argument('--attack_train', default='fgm', type=str,

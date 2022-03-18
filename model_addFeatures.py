@@ -201,7 +201,10 @@ class QuestionMatchingOtherTeatures(nn.Module):
             kl_loss = self.rdrop_loss(logits1, logits2)
         else:
             kl_loss = 0.0
-        celoss = self.criterion(logits1, labels.squeeze())
+        if labels is None:
+            celoss = 0
+        else:
+            celoss = self.criterion(logits1, labels.squeeze())
         loss = celoss + self.rdrop_coef * kl_loss
         logits1 = self.activation(logits1)
         logits1 = (logits1,)

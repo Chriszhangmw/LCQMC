@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, RandomSampler
 from functions_utils import load_model_and_parallel,swa,PGD,FGM
 from config import TrainArgs
 import pandas as pd
-from dev_metrics import get_base_out
+from dev_metrics import get_base_out,get_base_out_test
 
 
 def getMaskIndexWithLac(example ,all_select):
@@ -48,42 +48,45 @@ def getMaskIndexWithLac(example ,all_select):
     dep2id2 = np.zeros(len(x2))
     # if len(s1) != len(lac1) or len(s1) != len(deprel1):
     #     print(s1,type(s1))
+    try:
 
-    assert len(s1) == len(lac1) and len(s1) == len(deprel1),'长度不一致！%s _ %s _ %s' % (len(s1),len(lac1),len(deprel1))
-    assert len(s2) == len(lac2) and len(s2) == len(deprel2), '长度不一致！！%s _ %s _ %s'% (len(s2),len(lac2),len(deprel2))
-    i = 0
-    for w,l,d in  zip(s1,lac1,deprel1):
-        if w not in s2 and not all_select:
+        assert len(s1) == len(lac1) and len(s1) == len(deprel1),'长度不一致！%s _ %s _ %s' % (len(s1),len(lac1),len(deprel1))
+        assert len(s2) == len(lac2) and len(s2) == len(deprel2), '长度不一致！！%s _ %s _ %s'% (len(s2),len(lac2),len(deprel2))
+        i = 0
+        for w,l,d in  zip(s1,lac1,deprel1):
+            if w not in s2 and not all_select:
+                for j in range(i,i+len(w)):
+                    if j < len(x1):
+                        index1[j,:] = 1
             for j in range(i,i+len(w)):
-                if j < len(x1):
-                    index1[j,:] = 1
-        for j in range(i,i+len(w)):
-            if j==i and j < len(x1):
-                dep2id1[j] = dep2id.get('B-' + d, 0)
-                lac12id[j] = lac2id.get('B-' + l, 0)
-            elif j < len(x1):
-                dep2id1[j] = dep2id.get('I-' + d, 0)
-                lac12id[j] = lac2id.get('I-' + l, 0)
-            else:
-                break
-        i += len(w)
+                if j==i and j < len(x1):
+                    dep2id1[j] = dep2id.get('B-' + d, 0)
+                    lac12id[j] = lac2id.get('B-' + l, 0)
+                elif j < len(x1):
+                    dep2id1[j] = dep2id.get('I-' + d, 0)
+                    lac12id[j] = lac2id.get('I-' + l, 0)
+                else:
+                    break
+            i += len(w)
 
-    i = 0
-    for w,l,d in zip(s2,lac2,deprel2):
-        if w not in s1 and not  all_select:
+        i = 0
+        for w,l,d in zip(s2,lac2,deprel2):
+            if w not in s1 and not  all_select:
+                for j in range(i,i+len(w)):
+                    if j<len(x2):
+                        index2[j,:] = 1
             for j in range(i,i+len(w)):
-                if j<len(x2):
-                    index2[j,:] = 1
-        for j in range(i,i+len(w)):
-            if j==i and j < len(x2):
-                dep2id2[j] = dep2id.get('B-' + d, 0)
-                lac22id[j] = lac2id.get('B-' + l, 0)
-            elif j < len(x2):
-                dep2id2[j] = dep2id.get('I-' + d, 0)
-                lac22id[j] = lac2id.get('I-' + l, 0)
-            else:
-                break
-        i += len(w)
+                if j==i and j < len(x2):
+                    dep2id2[j] = dep2id.get('B-' + d, 0)
+                    lac22id[j] = lac2id.get('B-' + l, 0)
+                elif j < len(x2):
+                    dep2id2[j] = dep2id.get('I-' + d, 0)
+                    lac22id[j] = lac2id.get('I-' + l, 0)
+                else:
+                    break
+            i += len(w)
+    except:
+        return index1, index2, lac12id, lac22id, dep2id1, dep2id2
 
     return index1,index2,lac12id,lac22id,dep2id1,dep2id2
 
@@ -232,8 +235,10 @@ def convert_example_with_lac(example, is_test=False):
     if pad_select_index > 0:
         pad_metrics = np.zeros((pad_select_index,800))
         select_index = np.concatenate([select_index,pad_metrics])
-
-    label = np.array([int(float(example["label"]))], dtype="int64")
+    if is_test:
+        label = None
+    else:
+        label = np.array([int(float(example["label"]))], dtype="int64")
     assert len(input_ids) == max_seq_length
     assert len(token_type_ids) == max_seq_length
     assert len(attention_mask) == max_seq_length
@@ -383,6 +388,18 @@ def mc_evaluation(model, dev_info, device):
             pred_logits = np.append(pred_logits, tmp_pred)
     acc = simple_accuracy(pred_logits,target)
     return acc
+def predict(model, dev_info, device):
+    dev_loader = dev_info
+    pred_logits = None
+    for loss,pred in get_base_out_test(model, dev_loader, device):
+        tmp_pred = pred.cpu().numpy()
+        tmp_pred = [np.argmax(x) for x in tmp_pred]
+        if pred_logits is None:
+            pred_logits = tmp_pred
+        else:
+            pred_logits = np.append(pred_logits, tmp_pred)
+    return pred_logits
+
 def save_model(opt, model, global_step):
     output_dir = os.path.join(opt.output_dir, 'checkpoint-{}'.format(global_step))
     if not os.path.exists(output_dir):
@@ -424,7 +441,30 @@ def _collate_fn(batch):
                    "token_type_ids":token_type_ids,"select_tokens":select_tokens,
                    "lac_ids":lac_ids,"dep_ids":dep_ids,"labels":labels}
     return batch_data
+def _collate_fn_test(batch):
+    train_features = []
+    minibatch_size = len(batch)
+    for x in range(minibatch_size):
+        sample = batch[x]
+        sample=convert_example_with_lac(sample,True)
+        train_features.append(sample)
 
+    input_ids = [example.input_ids for example in train_features]
+    attention_mask = [example.attention_mask for example in train_features]
+    token_type_ids = [example.token_type_ids for example in train_features]
+    select_tokens = [example.select_tokens for example in train_features]
+    lac_ids = [example.lac_ids for example in train_features]
+    dep_ids = [example.dep_ids for example in train_features]
+    input_ids = torch.LongTensor(input_ids)
+    attention_mask = torch.LongTensor(attention_mask)
+    token_type_ids = torch.LongTensor(token_type_ids)
+    select_tokens = torch.LongTensor(select_tokens)
+    lac_ids = torch.LongTensor(lac_ids)
+    dep_ids = torch.LongTensor(dep_ids)
+    batch_data =  {"input_ids":input_ids, "attention_mask": attention_mask,
+                   "token_type_ids":token_type_ids,"select_tokens":select_tokens,
+                   "lac_ids":lac_ids,"dep_ids":dep_ids}
+    return batch_data
 
 def train(opt,model,train_dataset):
     swa_raw_model = copy.deepcopy(model)
@@ -514,6 +554,51 @@ def main(opt):
     train_dataset = MQDatasetIter(opt)
     model = QuestionMatchingOtherTeatures(opt)
     train(opt,model,train_dataset)
+
+
+def dev(opt):
+    dev_dataset = MQDatasetIter_dev(opt)
+    model = QuestionMatchingOtherTeatures(opt)
+
+    dev_loader = DataLoader(dataset=dev_dataset,
+                              batch_size=opt.train_batch_size,
+                              shuffle=False,
+                              num_workers=0, collate_fn=_collate_fn)
+    model_path_list = get_model_path_list(opt.output_dir)
+    max_acc = 0.
+    max_acc_step = 0
+    performance = {}
+
+    for idx, model_path in enumerate(model_path_list):
+        tmp_step = model_path.split('/')[-2].split('-')[-1]
+        model, device = load_model_and_parallel(model, opt.gpu_ids[0],
+                                                    ckpt_path=model_path)
+        acc = mc_evaluation(model,dev_loader,device)
+        performance[tmp_step] = acc
+        if acc > max_acc:
+            max_acc = acc
+            max_acc_step = tmp_step
+    print(f"max_acc_step is :",max_acc_step)
+    print(performance)
+
+
+def test(opt):
+    test_dataset = MQDatasetIter_test(opt)
+    model = QuestionMatchingOtherTeatures(opt)
+
+    test_loader = DataLoader(dataset=test_dataset,
+                            batch_size=opt.train_batch_size,
+                            shuffle=False,
+                            num_workers=0, collate_fn=_collate_fn_test)
+
+    best_model_path = "/home/zmw/big_space/zhangmeiwei_space/nlp_out/question_matching/roberta_wwm/checkpoint-76900/model.pt"
+    model, device = load_model_and_parallel(model, opt.gpu_ids[0],
+                                            ckpt_path=best_model_path)
+    res = predict(model, test_loader, device)
+    files = open('./predict.csv','w',encoding='utf-8')
+    for r in res:
+        files.write(str(r) + '\n')
+
 
 
 
@@ -650,8 +735,72 @@ class MQDatasetIter_dev(IterableDataset):
                           "ratio": items[ratio]}
                 yield sample
 
+class MQDatasetIter_test(IterableDataset):
+    def __init__(self,opt):
+        super(MQDatasetIter).__init__()
+        self.opt = opt
+        self.file_path = opt.test_file_path
+        self.info = self._get_file_info(self.file_path)
+        self.start = self.info['start']
+        self.end = self.info['end']
+
+    def __iter__(self):
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:  # single worker
+            iter_start = self.start
+            iter_end = self.end
+        else:  # multiple workers
+            per_worker = int(math.ceil((self.end - self.start) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            iter_start = self.start + worker_id * per_worker
+            iter_end = min(iter_start + per_worker, self.end)
+        sample_iterator = self._sample_generator(iter_start, iter_end)
+        return sample_iterator
+
+    def __len__(self):
+        return self.end - self.start
+
+    def _get_file_info(self,file_path):
+        info = {
+            "start": 1,
+            "end": 0,
+            "text_a": 0,
+            "text_b": 1,
+            "word_a": 2,
+            "deprel_a": 4,
+            "postag_a": 5,
+            "word_b": 6,
+            "deprel_b": 8,
+            "postag_b": 9,
+            "ratio":10
+        }
+        with open(file_path, 'r') as fin:
+            for _ in enumerate(fin):
+                info['end'] += 1
+        return info
+
+    def _sample_generator(self, start, end):
+        text_a,text_b,word_a,deprel_a,\
+        postag_a,word_b,deprel_b,postag_b,ratio= self.info['text_a'], self.info['text_b'], self.info['word_a'],\
+                                                 self.info['deprel_a'],self.info['postag_a'],\
+                                                 self.info['word_b'],self.info['deprel_b'],\
+                                                 self.info['postag_b'],self.info['ratio']
+        with open(self.file_path, 'r') as fin:
+            for i, line in enumerate(fin):
+                if i < start: continue
+                if i >= end: return StopIteration()
+                items = line.strip().split('\t')
+                sample = {"text_a": items[text_a], "text_b": items[text_b],
+                          "word_a": items[word_a], "deprel_a": items[deprel_a],
+                          "postag_a": items[postag_a],
+                          "word_b": items[word_b], "deprel_b": items[deprel_b],
+                          "postag_b": items[postag_b],
+                          "ratio": items[ratio]}
+                yield sample
 if __name__ == "__main__":
     args = TrainArgs().get_parser()
+    #training
+
     args.output_dir = os.path.join(args.output_dir, args.bert_type)
     set_seed(seed=2022)
     if args.weight_decay:
@@ -659,6 +808,12 @@ if __name__ == "__main__":
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir, exist_ok=True)
     main(args)
+
+    # dev
+    # dev(args)
+
+
+    # test(args)
 
 
 
